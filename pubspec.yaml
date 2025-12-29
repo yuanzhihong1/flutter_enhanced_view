@@ -1,7 +1,7 @@
 name: enhanced_view
 description: A lightweight Flutter widget library.
 version: 0.0.1
-homepage: https://github.com/yourname/enhanced_view
+homepage: https://github.com/yuanzhihong1/flutter_enhanced_view
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
