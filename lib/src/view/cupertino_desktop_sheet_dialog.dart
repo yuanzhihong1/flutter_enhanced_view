@@ -7,10 +7,13 @@ class CupertinoDesktopSheetDialog extends StatelessWidget {
   final Widget child;
   final Color backgroundColor;
 
+  final CupertinoButtonSize sizeStyle;
+
   const CupertinoDesktopSheetDialog({
     super.key,
     required this.child,
     required this.backgroundColor,
+    this.sizeStyle = CupertinoButtonSize.medium,
   });
 
   @override
@@ -29,6 +32,13 @@ class CupertinoDesktopSheetDialog extends StatelessWidget {
       builder: (context, constraints) {
         double width = constraints.maxWidth / 2.5;
         double height = constraints.maxHeight / 2;
+        if (sizeStyle == CupertinoButtonSize.medium) {
+          height = constraints.maxHeight / 2;
+        } else if (sizeStyle == CupertinoButtonSize.small) {
+          height = constraints.maxHeight / 3;
+        } else if (sizeStyle == CupertinoButtonSize.large) {
+          height = constraints.maxHeight / 1.5;
+        }
         if (backgroundColor.a == 0.0) {
           return Center(
             child: Container(
