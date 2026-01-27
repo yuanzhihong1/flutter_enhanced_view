@@ -3,16 +3,18 @@ import 'package:flutter/cupertino.dart';
 import '../../enhanced_view.dart';
 
 class TableHead {
-  String dataKey; // 对应传入的List<Map> 的Key
-  String title; // 标题
-  bool isDisplay; // 是否显示该列
-  dynamic Function(dynamic)? valueDisplayRule; // 显示内容如果外部需要再处理就调用这个
+  String dataKey;
+  String title;
+  bool isDisplay;
+  Widget Function(BuildContext context, dynamic value)? customBuilder;
+  double? width;
 
   TableHead({
     required this.dataKey,
     required this.title,
     required this.isDisplay,
-    this.valueDisplayRule,
+    this.customBuilder,
+    this.width,
   });
 }
 
@@ -62,8 +64,32 @@ class _DataTableState extends State<DataTable> {
   List<TableHead> get _displayedColumns =>
       widget.tableHeadList.where((col) => col.isDisplay).toList();
 
-  // 计算表头总宽度
-  double get _headerWidth => _displayedColumns.length * widget.columnWidth;
+  // 获取列的实际宽度
+  double _getColumnWidth(TableHead column) {
+    return column.width ?? widget.columnWidth;
+  }
+
+  // 计算表格总宽度
+  double get _totalTableWidth {
+    var totalWidth = 0.0;
+
+    // 复选框列宽度
+    if (_shouldShowCheckboxColumn) {
+      totalWidth += widget.checkboxColumnWidth;
+    }
+
+    // 数据列宽度
+    for (var column in _displayedColumns) {
+      totalWidth += _getColumnWidth(column);
+    }
+
+    // 操作列宽度
+    if (_shouldShowActionColumn) {
+      totalWidth += widget.columnWidth;
+    }
+
+    return totalWidth;
+  }
 
   // 是否显示复选框列
   bool get _shouldShowCheckboxColumn =>
@@ -81,7 +107,6 @@ class _DataTableState extends State<DataTable> {
   @override
   void didUpdateWidget(DataTable oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 当数据源变化时，重新初始化选择状态
     if (oldWidget.list != widget.list ||
         oldWidget.multipleSelections != widget.multipleSelections) {
       _initializeSelection();
@@ -96,11 +121,10 @@ class _DataTableState extends State<DataTable> {
   }
 
   void _initializeSelection() {
-    // 只在multipleSelections为true时初始化_selectedRows
     if (widget.multipleSelections) {
       _selectedRows = List<bool>.filled(widget.list.length, false);
     } else {
-      _selectedRows = []; // 不允许多选时，不需要维护选中状态
+      _selectedRows = [];
     }
   }
 
@@ -123,11 +147,9 @@ class _DataTableState extends State<DataTable> {
 
     setState(() {
       if (_selectedIndexes.length == widget.list.length) {
-        // 取消全选
         _selectedRows = List<bool>.filled(widget.list.length, false);
         _selectedIndexes.clear();
       } else {
-        // 全选
         _selectedRows = List<bool>.filled(widget.list.length, true);
         _selectedIndexes = Set<int>.from(Iterable.generate(widget.list.length));
       }
@@ -145,71 +167,57 @@ class _DataTableState extends State<DataTable> {
     widget.multipleSelectionsCall(selectedItems);
   }
 
-  // 处理单元格显示内容
-  String _processCellValue(TableHead column, dynamic rawValue) {
-    if (column.valueDisplayRule != null) {
-      final processedValue = column.valueDisplayRule!(rawValue);
-      return processedValue?.toString() ?? '';
-    }
-    return rawValue?.toString() ?? '';
-  }
-
   // 构建操作列
   Widget _buildActionColumn(Map<String, dynamic> item) {
-    return SizedBox(
+    return Container(
       width: widget.columnWidth,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
-        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Spacer(),
           if (widget.showEdit == true)
             CupertinoButton(
-              onPressed: () {
-                if (widget.editCall != null) {
-                  widget.editCall!(item);
-                }
-              },
-              minimumSize: const Size(0, 0),
+              padding: const EdgeInsets.all(6),
+              onPressed: () => widget.editCall?.call(item),
               child: const Icon(
                 CupertinoIcons.pencil,
                 size: 20,
                 color: CupertinoColors.activeBlue,
               ),
             ),
-          if (widget.showEdit == true && widget.showRemove == true)
-            const Spacer(),
           if (widget.showRemove == true)
             CupertinoButton(
-              minimumSize: const Size(0, 0),
-              onPressed: () {
-                if (widget.removeCall != null) {
-                  widget.removeCall!(item);
-                }
-              },
+              padding: const EdgeInsets.all(6),
+              onPressed: () => widget.removeCall?.call(item),
               child: const Icon(
                 CupertinoIcons.delete,
                 size: 20,
                 color: CupertinoColors.destructiveRed,
               ),
             ),
-          const Spacer(),
         ],
       ),
     );
   }
 
   Color _getSelectColor() {
-    if (widget.selectedColor != null) {
-      return widget.selectedColor!;
-    } else {
-      return CupertinoTheme.of(context).primaryColor;
-    }
+    return widget.selectedColor ?? CupertinoTheme.of(context).primaryColor;
   }
 
   Widget _buildHeader() {
-    return SizedBox(
+    return Container(
       height: widget.rowHeight,
+      decoration: BoxDecoration(
+        color: CupertinoColors.secondarySystemBackground.resolveFrom(context),
+        border: Border(
+          bottom: BorderSide(
+            color: CupertinoColors.separator.resolveFrom(context),
+            width: 0.5,
+          ),
+        ),
+      ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 选择列
           if (_shouldShowCheckboxColumn)
@@ -225,6 +233,7 @@ class _DataTableState extends State<DataTable> {
               ),
               child: GestureDetector(
                 onTap: _handleSelectAll,
+                behavior: HitTestBehavior.opaque,
                 child: Center(
                   child: Container(
                     width: 22,
@@ -234,13 +243,12 @@ class _DataTableState extends State<DataTable> {
                       border: Border.all(
                         color: _selectedIndexes.length == widget.list.length
                             ? _getSelectColor()
-                            : CupertinoColors.tertiaryLabel.resolveFrom(
-                                context,
-                              ),
+                            : CupertinoColors.tertiaryLabel
+                                .resolveFrom(context),
                         width: 1.5,
                       ),
                       color: _selectedIndexes.length == widget.list.length
-                          ? widget.selectedColor
+                          ? _getSelectColor()
                           : CupertinoColors.transparent,
                     ),
                     child: _selectedIndexes.length == widget.list.length
@@ -258,49 +266,37 @@ class _DataTableState extends State<DataTable> {
             ),
 
           // 数据列
-          Expanded(
-            child: SingleChildScrollView(
-              controller: _horizontalScrollController,
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: _headerWidth,
-                child: Row(
-                  children: _displayedColumns.map((column) {
-                    return Container(
-                      width: widget.columnWidth,
-                      decoration: BoxDecoration(
-                        border: Border(
-                          right: BorderSide(
-                            color: CupertinoColors.separator.resolveFrom(
-                              context,
-                            ),
-                            width: 0.5,
-                          ),
-                        ),
-                      ),
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            column.title,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: CupertinoColors.label.resolveFrom(context),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
+          ..._displayedColumns.map((column) {
+            final width = _getColumnWidth(column);
+            return Container(
+              width: width,
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(
+                    color: CupertinoColors.separator.resolveFrom(context),
+                    width: 0.5,
+                  ),
                 ),
               ),
-            ),
-          ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Center(
+                  child: Text(
+                    column.title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: CupertinoColors.label.resolveFrom(context),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ),
+            );
+          }),
 
-          // 操作列表头（固定在最右侧）
+          // 操作列表头
           if (_shouldShowActionColumn)
             Container(
               width: widget.columnWidth,
@@ -330,7 +326,6 @@ class _DataTableState extends State<DataTable> {
 
   Widget _buildRow(int index) {
     final item = widget.list[index];
-    // 安全地获取选中状态
     final isSelected = widget.multipleSelections &&
         index < _selectedRows.length &&
         _selectedRows[index];
@@ -341,11 +336,9 @@ class _DataTableState extends State<DataTable> {
         color: isSelected
             ? _getSelectColor().withAlpha((255.0 * 0.08).round())
             : (index % 2 == 0
-                    ? CupertinoColors.systemBackground.resolveFrom(context)
-                    : CupertinoColors.secondarySystemBackground.resolveFrom(
-                        context,
-                      ))
-                .resolveFrom(context),
+                ? CupertinoColors.systemBackground.resolveFrom(context)
+                : CupertinoColors.secondarySystemBackground
+                    .resolveFrom(context)),
         border: Border(
           bottom: BorderSide(
             color: CupertinoColors.separator.resolveFrom(context),
@@ -354,6 +347,7 @@ class _DataTableState extends State<DataTable> {
         ),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 选择列
           if (_shouldShowCheckboxColumn)
@@ -369,6 +363,7 @@ class _DataTableState extends State<DataTable> {
               ),
               child: GestureDetector(
                 onTap: () => _handleRowSelection(index),
+                behavior: HitTestBehavior.opaque,
                 child: Center(
                   child: Container(
                     width: 22,
@@ -378,9 +373,8 @@ class _DataTableState extends State<DataTable> {
                       border: Border.all(
                         color: isSelected
                             ? _getSelectColor()
-                            : CupertinoColors.tertiaryLabel.resolveFrom(
-                                context,
-                              ),
+                            : CupertinoColors.tertiaryLabel
+                                .resolveFrom(context),
                         width: 1.5,
                       ),
                       color: isSelected
@@ -402,54 +396,24 @@ class _DataTableState extends State<DataTable> {
             ),
 
           // 数据列
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              controller: _horizontalScrollController,
-              child: SizedBox(
-                width: _headerWidth,
-                child: Row(
-                  children: _displayedColumns.map((column) {
-                    final rawValue = item[column.dataKey];
-                    final displayValue = _processCellValue(column, rawValue);
-
-                    return Container(
-                      width: widget.columnWidth,
-                      decoration: BoxDecoration(
-                        border: Border(
-                          right: BorderSide(
-                            color: CupertinoColors.separator.resolveFrom(
-                              context,
-                            ),
-                            width: 0.5,
-                          ),
-                        ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            displayValue,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: isSelected
-                                  ? widget.selectedColor
-                                  : CupertinoColors.label.resolveFrom(context),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
+          ..._displayedColumns.map((column) {
+            final width = _getColumnWidth(column);
+            final rawValue = item[column.dataKey];
+            return Container(
+              width: width,
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(
+                    color: CupertinoColors.separator.resolveFrom(context),
+                    width: 0.5,
+                  ),
                 ),
               ),
-            ),
-          ),
+              child: _buildCellContent(column, rawValue, isSelected),
+            );
+          }),
 
-          // 操作列（固定在最右侧）
+          // 操作列
           if (_shouldShowActionColumn)
             Container(
               width: widget.columnWidth,
@@ -468,10 +432,36 @@ class _DataTableState extends State<DataTable> {
     );
   }
 
+  Widget _buildCellContent(
+      TableHead column, dynamic rawValue, bool isSelected) {
+    if (column.customBuilder != null) {
+      return column.customBuilder!(context, rawValue);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          rawValue?.toString() ?? '',
+          style: TextStyle(
+            fontSize: 14,
+            color: isSelected
+                ? _getSelectColor()
+                : CupertinoColors.label.resolveFrom(context),
+          ),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
-    return Center(
+    return Container(
+      height: 200,
+      alignment: Alignment.center,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             CupertinoIcons.table,
@@ -495,24 +485,37 @@ class _DataTableState extends State<DataTable> {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.max,
       children: [
-        // 表头
-        _buildHeader(),
-
-        // 分割线
-        const CupertinoDivider(),
-
-        // 表格内容
+        // 表格容器 - 包含整个表格（表头 + 数据）
         Expanded(
-          child: widget.list.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
-                  itemCount: widget.list.length,
-                  itemBuilder: (context, index) {
-                    return _buildRow(index);
-                  },
-                ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            controller: _horizontalScrollController,
+            child: SizedBox(
+              width: _totalTableWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 表头
+                  _buildHeader(),
+
+                  // 分割线
+                  const CupertinoDivider(height: 0),
+
+                  // 表格内容
+                  Expanded(
+                    child: widget.list.isEmpty
+                        ? _buildEmptyState()
+                        : ListView.builder(
+                            shrinkWrap: false,
+                            itemCount: widget.list.length,
+                            itemBuilder: (context, index) => _buildRow(index),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );
